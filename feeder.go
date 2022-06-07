@@ -8,14 +8,18 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	types2 "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"log"
 	"strconv"
 	"sync"
 )
 
 const QueueUrl = "https://sqs.us-east-1.amazonaws.com/514260427086/standard_queue"
+const BucketName = "sketch123456765-legacy-s3"
+const ObjectPrefix = "image/"
+const Delimiter = "/"
 
+// Map through list of objects and return a list of the object keys
 func s3ObjectToKeyMap(vs []types.Object, f func(types.Object) string) []string {
 	vsm := make([]string, len(vs))
 	for i, v := range vs {
@@ -28,25 +32,28 @@ func main() {
 	ExecuteFeeder()
 }
 
+// Download the keys from the bucket and send them to an SQS queue
 func downloadKeysToQueue(cfg *aws.Config) error {
 	S3 := s3.NewFromConfig(*cfg)
 	SQS := sqs.NewFromConfig(*cfg)
 
-	getObjectKeys := func(nextToken string) *s3.ListObjectsV2Output {
+	getAndLoadObjectKeys := func(nextToken string) *s3.ListObjectsV2Output {
 		props := &s3.ListObjectsV2Input{
-			Bucket:    aws.String("sketch123456765-legacy-s3"),
-			Prefix:    aws.String("image/"),
-			Delimiter: aws.String("/")}
+			Bucket:    aws.String(BucketName),
+			Prefix:    aws.String(ObjectPrefix),
+			Delimiter: aws.String(Delimiter)}
 		if nextToken != "" {
 			props.ContinuationToken = aws.String(nextToken)
 		}
 
+		// Get the objects from the bucket
 		resp, err := S3.ListObjectsV2(context.TODO(), props)
 		if err != nil {
 			// todo: handle error
 			fmt.Println(err)
 		}
 
+		// Transform the list of objects to list of keys only
 		resultIterable := s3ObjectToKeyMap(resp.Contents, func(v types.Object) string {
 			return *v.Key
 		})
@@ -55,17 +62,28 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 		var wg sync.WaitGroup
 		wg.Add(resultLength)
 
+		// Loop through the keys in batches of 10s (queue batch maximum)
 		for i := 0; i < len(resultIterable); i += 10 {
+			// Run the loading of messages in a different thread/goroutine
 			go func(i int) {
 				defer wg.Done()
-				var entries []types2.SendMessageBatchRequestEntry
+				var entries []sqsTypes.SendMessageBatchRequestEntry
 
-				for j := i; j < (i + 10); j++ {
-					element := resultIterable[j]
-					entries = append(entries,
-						types2.SendMessageBatchRequestEntry{Id: aws.String(strconv.Itoa(j)), MessageBody: aws.String(element)})
+				var nextLen int
+				if resultLength-i >= 10 {
+					nextLen = 10
+				} else {
+					nextLen = resultLength - i
 				}
 
+				// For each group of 10 (or less) keys, generate the SQS entries
+				for j := i; j < (i + nextLen); j++ {
+					key := resultIterable[j]
+					entries = append(entries,
+						sqsTypes.SendMessageBatchRequestEntry{Id: aws.String(strconv.Itoa(j)), MessageBody: aws.String(key)})
+				}
+
+				// Batch send the keys to SQS
 				_, err := SQS.SendMessageBatch(context.TODO(), &sqs.SendMessageBatchInput{
 					QueueUrl: aws.String(QueueUrl),
 					Entries:  entries,
@@ -74,7 +92,6 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 					// todo: handle error
 					fmt.Println(err)
 				}
-
 			}(i)
 		}
 
@@ -83,10 +100,11 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 		return resp
 	}
 
-	response := getObjectKeys("")
+	response := getAndLoadObjectKeys("")
 
+	// Recursively fetch (and) new keys as long as a ContinuationToken is returned
 	for response.ContinuationToken != nil {
-		response = getObjectKeys(*response.ContinuationToken)
+		response = getAndLoadObjectKeys(*response.ContinuationToken)
 	}
 
 	return nil
