@@ -2,60 +2,83 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	types2 "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"log"
-	"os"
-	"strings"
+	"strconv"
+	"sync"
 )
+
+const QueueUrl = "https://sqs.us-east-1.amazonaws.com/514260427086/standard_queue"
+
+func s3ObjectToKeyMap(vs []types.Object, f func(types.Object) string) []string {
+	vsm := make([]string, len(vs))
+	for i, v := range vs {
+		vsm[i] = f(v)
+	}
+	return vsm
+}
 
 func main() {
 	ExecuteFeeder()
 }
 
-func ExecuteFeeder() {
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
-	if err != nil {
-		log.Fatalf("unable to load SDK config, %v", err)
-	}
-
-	S3 := s3.NewFromConfig(cfg)
+func downloadKeysToQueue(cfg *aws.Config) error {
+	S3 := s3.NewFromConfig(*cfg)
+	SQS := sqs.NewFromConfig(*cfg)
 
 	getObjectKeys := func(nextToken string) *s3.ListObjectsV2Output {
-		resp, err := S3.ListObjectsV2(context.TODO(), &s3.ListObjectsV2Input{
-			Bucket:            aws.String("my-bucket"),
-			ContinuationToken: aws.String(nextToken),
-			Delimiter:         aws.String("/")})
+		props := &s3.ListObjectsV2Input{
+			Bucket:    aws.String("sketch123456765-legacy-s3"),
+			Prefix:    aws.String("image/"),
+			Delimiter: aws.String("/")}
+		if nextToken != "" {
+			props.ContinuationToken = aws.String(nextToken)
+		}
 
+		resp, err := S3.ListObjectsV2(context.TODO(), props)
 		if err != nil {
 			// todo: handle error
+			fmt.Println(err)
 		}
 
-		f, err := os.OpenFile("images.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-		if err != nil {
-			panic(err)
-		}
-
-		defer func(f *os.File) {
-			err := f.Close()
-			if err != nil {
-				panic(err)
-			}
-		}(f)
-
-		resultIterable := S3ObjectToKeyMap(resp.Contents, func(v types.Object) string {
+		resultIterable := s3ObjectToKeyMap(resp.Contents, func(v types.Object) string {
 			return *v.Key
 		})
+		resultLength := len(resultIterable)
 
-		if _, err = f.WriteString(strings.Join(resultIterable, "\n")); err != nil {
-			panic(err)
+		var wg sync.WaitGroup
+		wg.Add(resultLength)
+
+		for i := 0; i < len(resultIterable); i += 10 {
+			go func(i int) {
+				defer wg.Done()
+				var entries []types2.SendMessageBatchRequestEntry
+
+				for j := i; j < (i + 10); j++ {
+					element := resultIterable[j]
+					entries = append(entries,
+						types2.SendMessageBatchRequestEntry{Id: aws.String(strconv.Itoa(j)), MessageBody: aws.String(element)})
+				}
+
+				_, err := SQS.SendMessageBatch(context.TODO(), &sqs.SendMessageBatchInput{
+					QueueUrl: aws.String(QueueUrl),
+					Entries:  entries,
+				})
+				if err != nil {
+					// todo: handle error
+					fmt.Println(err)
+				}
+
+			}(i)
 		}
 
-		/*objects = append(objects, S3ObjectToKeyMap(resp.Contents, func(v types.Object) string {
-			return *v.Key
-		})...)*/
+		wg.Wait()
 
 		return resp
 	}
@@ -66,4 +89,17 @@ func ExecuteFeeder() {
 		response = getObjectKeys(*response.ContinuationToken)
 	}
 
+	return nil
+}
+
+func ExecuteFeeder() {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-1"))
+	if err != nil {
+		log.Fatalf("unable to load SDK config, %v", err)
+	}
+
+	err = downloadKeysToQueue(&cfg)
+	if err != nil {
+		panic(err)
+	}
 }
