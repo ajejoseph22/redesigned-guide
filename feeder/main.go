@@ -11,6 +11,7 @@ import (
 	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/joho/godotenv"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"sync"
@@ -60,9 +61,10 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 			return *v.Key
 		})
 		resultLength := len(resultIterable)
+		var deltas = int(math.Ceil(float64(resultLength / 10)))
 
 		var wg sync.WaitGroup
-		wg.Add(resultLength)
+		wg.Add(deltas)
 
 		// Loop through the keys in batches of 10s (queue batch maximum)
 		for i := 0; i < len(resultIterable); i += 10 {

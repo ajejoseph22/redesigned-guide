@@ -11,7 +11,6 @@ import (
 	"github.com/joho/godotenv"
 	"log"
 	"os"
-	"sync"
 )
 
 func main() {
@@ -27,17 +26,12 @@ func readAndCopyKeys(cfg *aws.Config) {
 	delimiter := os.Getenv("DELIMITER")
 	queueUrl := os.Getenv("QUEUE_URL")
 
-	fmt.Println(destinationBucketName)
-
-	var wg sync.WaitGroup
 	ch := make(chan int, 2)
 
 	// 2 threads
 	for {
 		ch <- 1
 		go func() {
-			wg.Add(1)
-			defer wg.Done()
 			messages, err := SQS.ReceiveMessage(context.TODO(),
 				&sqs.ReceiveMessageInput{
 					QueueUrl:            aws.String(queueUrl),
@@ -59,6 +53,8 @@ func readAndCopyKeys(cfg *aws.Config) {
 					successfullyCopiedEntries = append(successfullyCopiedEntries,
 						types.DeleteMessageBatchRequestEntry{Id: message.MessageId, ReceiptHandle: message.ReceiptHandle})
 				}
+
+				// todo: use gorm to update DB
 			}
 
 			// Delete successfullyCopiedKeys from Queue. The ones that failed to be copied will remain in the queue and
@@ -74,8 +70,6 @@ func readAndCopyKeys(cfg *aws.Config) {
 			<-ch
 		}()
 	}
-
-	wg.Wait()
 }
 
 func ExecuteCopy() {
