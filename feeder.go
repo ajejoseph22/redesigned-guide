@@ -9,15 +9,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/joho/godotenv"
 	"log"
+	"os"
 	"strconv"
 	"sync"
 )
-
-const QueueUrl = "https://sqs.us-east-1.amazonaws.com/514260427086/standard_queue"
-const BucketName = "sketch123456765-legacy-s3"
-const ObjectPrefix = "image/"
-const Delimiter = "/"
 
 // Map through list of objects and return a list of the object keys
 func s3ObjectToKeyMap(vs []types.Object, f func(types.Object) string) []string {
@@ -37,11 +34,16 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 	S3 := s3.NewFromConfig(*cfg)
 	SQS := sqs.NewFromConfig(*cfg)
 
+	bucketName, _ := os.LookupEnv("SOURCE_BUCKET_NAME")
+	objectPrefix, _ := os.LookupEnv("OBJECT_PREFIX")
+	delimiter, _ := os.LookupEnv("DELIMITER")
+	queueUrl, _ := os.LookupEnv("QUEUE_URL")
+
 	getAndLoadObjectKeys := func(nextToken string) *s3.ListObjectsV2Output {
 		props := &s3.ListObjectsV2Input{
-			Bucket:    aws.String(BucketName),
-			Prefix:    aws.String(ObjectPrefix),
-			Delimiter: aws.String(Delimiter)}
+			Bucket:    aws.String(bucketName),
+			Prefix:    aws.String(objectPrefix),
+			Delimiter: aws.String(delimiter)}
 		if nextToken != "" {
 			props.ContinuationToken = aws.String(nextToken)
 		}
@@ -85,7 +87,7 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 
 				// Batch send the keys to SQS
 				_, err := SQS.SendMessageBatch(context.TODO(), &sqs.SendMessageBatchInput{
-					QueueUrl: aws.String(QueueUrl),
+					QueueUrl: aws.String(queueUrl),
 					Entries:  entries,
 				})
 				if err != nil {
@@ -111,6 +113,11 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 }
 
 func ExecuteFeeder() {
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatalf("Some error occured while loading .env file. Err: %s", err)
+	}
+
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-1"))
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
