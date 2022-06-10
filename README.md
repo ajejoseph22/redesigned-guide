@@ -14,7 +14,8 @@ This assumes that you have:
 * `cd` into the `consumer` directory. create a `.env` file using the `env.sample` file as a reference.
 * cd to the root directory and run `docker-compose up`
 
-PS: docker and docker-compose must be installed on machine
+[PS: docker and docker-compose must be installed on machine]
+
 
 ## Comments and considerations
 For an ideal solution in a production environment, the feeder service would be running on a serverless 
@@ -31,8 +32,11 @@ copy to s3 - production flow is not disrupted.
 In the event of a failure to copy an object, the key (message) doesn't get deleted from the SQS queue, and it would
 automatically get processed/consumed again (either by the same worker or another worker) after the visibility timeout 
 has expired.   
+
+
 ## Architecture
 ![](./architecture.jpg)
+
 
 ## Stack
 * Go
