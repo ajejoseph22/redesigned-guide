@@ -8,7 +8,7 @@ This assumes that you have:
 - created an SQS standard queue
 
 
-**Steps**
+## Steps
 * clone the repository.
 * `cd` into the `feeder` directory. create a `.env` file using the `env.sample` file as a reference.
 * `cd` into the `consumer` directory. create a `.env` file using the `env.sample` file as a reference.
