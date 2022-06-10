@@ -52,7 +52,7 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 		// Get the objects from the bucket
 		resp, err := S3.ListObjectsV2(context.TODO(), props)
 		if err != nil {
-			// todo: handle error
+			// todo: log to some external service (DataDog)
 			fmt.Println(err)
 		}
 
@@ -93,7 +93,7 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 					Entries:  entries,
 				})
 				if err != nil {
-					// todo: handle error
+					// todo: log to some external service (DataDog)
 					fmt.Println(err)
 				}
 			}(i)
@@ -120,7 +120,7 @@ func ExecuteFeeder() {
 		log.Fatalf("Some error occured while loading .env file. Err: %s", err)
 	}
 
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-1"))
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(os.Getenv("AWS_DEFAULT_REGION")))
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
 	}

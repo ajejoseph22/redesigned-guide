@@ -91,10 +91,10 @@ func readAndCopyKeys(cfg *aws.Config) {
 			// Delete successfullyCopiedKeys from Queue. The ones that failed to be copied will remain in the queue and
 			// will be processed again
 			if len(successfullyCopiedEntries) > 0 {
-				_, err = SQS.DeleteMessageBatch(context.TODO(),
+				_, err := SQS.DeleteMessageBatch(context.TODO(),
 					&sqs.DeleteMessageBatchInput{QueueUrl: aws.String(queueUrl), Entries: successfullyCopiedEntries})
 				if err != nil {
-					// todo: handle error
+					// todo: log to some external service (DataDog)
 					fmt.Println(err)
 				}
 			}
@@ -109,7 +109,7 @@ func ExecuteCopy() {
 		log.Fatalf("Some error occured while loading .env file. Err: %s", err)
 	}
 
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-1"))
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(os.Getenv("AWS_DEFAULT_REGION")))
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
 	}
