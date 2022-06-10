@@ -2,8 +2,8 @@
 This assumes that you have: 
 - a source and destination bucket created on s3
 - a remote postgres DB
-- executed [the SQL script](./add-ons/sre-challenge-addon1.sql) on the remote db and run the 
-[seeding script](./add-ons/sre-challenge-addon1.py) to insert data into the source bucket 
+- executed [the SQL script](https://drive.google.com/file/d/1DC46CHhtYLZ5lm3V174aGz9zf5_4mq5g/view?usp=sharing) on the remote db and run the 
+[seeding script](https://drive.google.com/file/d/1VLlhFh2xDQJJ0pPH-usOaBlj5Vkxw_hv/view?usp=sharing) to insert data into the source bucket 
 - created AWS user account credentials with s3 (read, write, copy) and SQS (read, write, delete) permissions
 - created an SQS standard queue
 

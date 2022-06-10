@@ -1,1 +1,0 @@
-## This directory references code provided by the [Sketch](https://sketch.com) SRE team.
