@@ -9,9 +9,27 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/joho/godotenv"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 	"log"
 	"os"
+	"strings"
 )
+
+type CustomGormModel struct {
+	ID uint `gorm:"primarykey"`
+}
+
+type Avatar struct {
+	CustomGormModel
+	Path string
+}
+
+func getDSN() string {
+	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=%s",
+		os.Getenv("POSTGRES_HOST"), os.Getenv("POSTGRES_USER"), os.Getenv("POSTGRES_PASSWORD"),
+		os.Getenv("POSTGRES_DB"), os.Getenv("POSTGRES_PORT"), "require", "Asia/Shanghai")
+}
 
 func main() {
 	ExecuteCopy()
@@ -21,10 +39,19 @@ func readAndCopyKeys(cfg *aws.Config) {
 	SQS := sqs.NewFromConfig(*cfg)
 	S3 := s3.NewFromConfig(*cfg)
 
+	db, err := gorm.Open(postgres.Open(getDSN()), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("failed to connect database: %+v", err)
+	} else {
+		fmt.Println("Successfully connected to DB")
+	}
+
 	destinationBucketName := os.Getenv("DESTINATION_BUCKET_NAME")
 	sourceBucketName := os.Getenv("SOURCE_BUCKET_NAME")
 	delimiter := os.Getenv("DELIMITER")
 	queueUrl := os.Getenv("QUEUE_URL")
+	oldPrefix := os.Getenv("OLD_PREFIX")
+	newPrefix := os.Getenv("NEW_PREFIX")
 
 	ch := make(chan int, 2)
 
@@ -43,18 +70,22 @@ func readAndCopyKeys(cfg *aws.Config) {
 
 			var successfullyCopiedEntries []types.DeleteMessageBatchRequestEntry
 			for _, message := range messages.Messages {
+				newPath := strings.Replace(*message.Body, oldPrefix, newPrefix, 1)
 				_, err := S3.CopyObject(context.TODO(),
 					&s3.CopyObjectInput{
 						Bucket:     aws.String(destinationBucketName),
-						Key:        message.Body,
+						Key:        aws.String(newPath),
 						CopySource: aws.String(fmt.Sprintf("%s%s%s", sourceBucketName, delimiter, *message.Body)),
 					})
 				if err == nil {
 					successfullyCopiedEntries = append(successfullyCopiedEntries,
-						types.DeleteMessageBatchRequestEntry{Id: message.MessageId, ReceiptHandle: message.ReceiptHandle})
-				}
+						types.DeleteMessageBatchRequestEntry{
+							Id: message.MessageId, ReceiptHandle: message.ReceiptHandle,
+						})
 
-				// todo: use gorm to update DB
+					// Update path in DB
+					db.Model(&Avatar{}).Where("path = ?", *message.Body).Update("path", newPath)
+				}
 			}
 
 			// Delete successfullyCopiedKeys from Queue. The ones that failed to be copied will remain in the queue and
