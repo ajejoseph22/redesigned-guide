@@ -1,0 +1,5 @@
+CREATE DATABASE proddatabase;
+CREATE TABLE IF NOT EXISTS avatars (
+  id SERIAL PRIMARY KEY,
+  path VARCHAR
+);
