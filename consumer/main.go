@@ -59,6 +59,10 @@ func readAndCopyKeys(cfg *aws.Config) {
 	for {
 		ch <- 1
 		go func() {
+			defer func() {
+				<-ch
+			}()
+
 			messages, err := SQS.ReceiveMessage(context.TODO(),
 				&sqs.ReceiveMessageInput{
 					QueueUrl:            aws.String(queueUrl),
@@ -98,7 +102,6 @@ func readAndCopyKeys(cfg *aws.Config) {
 					fmt.Println(err)
 				}
 			}
-			<-ch
 		}()
 	}
 }

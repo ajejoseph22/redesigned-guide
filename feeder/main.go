@@ -40,12 +40,13 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 	delimiter, _ := os.LookupEnv("DELIMITER")
 	queueUrl, _ := os.LookupEnv("QUEUE_URL")
 
-	getAndLoadObjectKeys := func(nextToken string) *s3.ListObjectsV2Output {
+	getAndLoadObjectKeys := func(nextToken string) (*s3.ListObjectsV2Output, error) {
 		props := &s3.ListObjectsV2Input{
 			Bucket:    aws.String(bucketName),
 			Prefix:    aws.String(objectPrefix),
 			Delimiter: aws.String(delimiter)}
 		if nextToken != "" {
+			// todo: store in some external storage (kvDB, redis)
 			props.ContinuationToken = aws.String(nextToken)
 		}
 
@@ -54,6 +55,7 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 		if err != nil {
 			// todo: log to some external service (DataDog)
 			fmt.Println(err)
+			return nil, err
 		}
 
 		// Transform the list of objects to list of keys only
@@ -101,17 +103,17 @@ func downloadKeysToQueue(cfg *aws.Config) error {
 
 		wg.Wait()
 
-		return resp
+		return resp, nil
 	}
 
-	response := getAndLoadObjectKeys("")
+	response, err := getAndLoadObjectKeys("")
 
 	// Recursively fetch (and) new keys as long as a ContinuationToken is returned
 	for response.ContinuationToken != nil {
-		response = getAndLoadObjectKeys(*response.ContinuationToken)
+		response, err = getAndLoadObjectKeys(*response.ContinuationToken)
 	}
 
-	return nil
+	return err
 }
 
 func ExecuteFeeder() {
